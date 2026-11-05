@@ -19,7 +19,6 @@
   },
   "homepage": "https://github.com/Hendramp/WealthCoinContractsMain#readme",
   "devDependencies": {
-    "@nomicfoundation/hardhat-toolbox": "^7.0.0",
     "hardhat": "^3.21.2"
   },
   "dependencies": {
