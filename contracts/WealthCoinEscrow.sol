@@ -5,6 +5,12 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
+/// @notice Minimal interface to the factory's fee accounting. Declared here
+///         instead of importing the factory, which would be a circular import.
+interface IFeeSink {
+    function notifyFeeReceived(uint256 amount) external;
+}
+
 /// @title WealthCoinEscrow
 /// @notice Single-sale escrow, WTC only. Buyer funds it, seller delivers, buyer
 ///         confirms (or the delivery window lapses and funds auto-release to the
@@ -48,6 +54,7 @@ contract WealthCoinEscrow is ReentrancyGuard {
     error WrongState(State current);
     error NotBuyer();
     error NotSeller();
+    error NotParty();
     error NotResolver();
     error DeadlinePassed();
     error DeadlineNotPassed();
@@ -55,6 +62,7 @@ contract WealthCoinEscrow is ReentrancyGuard {
     error ZeroAddress();
     error ZeroPrice();
     error FeeTooHigh();
+    error InvalidWindow();
 
     modifier onlyBuyer() {
         if (msg.sender != buyer) revert NotBuyer();
@@ -84,8 +92,10 @@ contract WealthCoinEscrow is ReentrancyGuard {
     ) {
         if (_wtc == address(0) || _buyer == address(0) || _seller == address(0)
             || _factory == address(0) || _resolver == address(0)) revert ZeroAddress();
+        if (_buyer == _seller) revert NotParty();
         if (_priceInWTC == 0) revert ZeroPrice();
         if (_feeBps > MAX_FEE_BPS) revert FeeTooHigh();
+        if (_deliveryWindow == 0) revert InvalidWindow();
 
         wtc = IERC20(_wtc);
         buyer = _buyer;
@@ -127,18 +137,21 @@ contract WealthCoinEscrow is ReentrancyGuard {
         _release();
     }
 
-    /// @notice Buyer reclaims funds only if the seller never marked delivery and
-    ///         the payment deadline has passed. Cannot run after delivery.
-    function refund() external onlyBuyer inState(State.Paid) nonReentrant {
-        if (block.timestamp <= paymentDeadline) revert DeadlineNotPassed();
+    /// @notice Buyer recovers funds if the seller never marked delivery and the
+    ///         payment deadline plus the delivery window has passed. Cannot run
+    ///         after delivery — use raiseDispute() for that case.
+    function claimAfterNoDelivery() external onlyBuyer inState(State.Paid) nonReentrant {
+        if (block.timestamp <= paymentDeadline + deliveryWindow) revert DeadlineNotPassed();
         state = State.Refunded;
         wtc.safeTransfer(buyer, priceInWTC);
         emit Refunded(buyer, priceInWTC);
     }
 
-    /// @notice Either party can freeze the escrow for resolver review.
-    function raiseDispute() external inState(State.Paid) {
-        if (msg.sender != buyer && msg.sender != seller) revert NotBuyer();
+    /// @notice Either party can freeze the escrow for resolver review, before or
+    ///         after the seller marks delivery.
+    function raiseDispute() external nonReentrant {
+        if (state != State.Paid && state != State.Delivered) revert WrongState(state);
+        if (msg.sender != buyer && msg.sender != seller) revert NotParty();
         state = State.Disputed;
         emit Disputed(msg.sender);
     }
@@ -167,6 +180,9 @@ contract WealthCoinEscrow is ReentrancyGuard {
 
     function _payout() internal {
         wtc.safeTransfer(seller, priceInWTC - feeInWTC);
-        if (feeInWTC > 0) wtc.safeTransfer(factory, feeInWTC);
+        if (feeInWTC > 0) {
+            wtc.safeTransfer(factory, feeInWTC);
+            IFeeSink(factory).notifyFeeReceived(feeInWTC);
+        }
     }
 }

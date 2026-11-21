@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./WealthCoinEscrow.sol";
 
@@ -9,6 +10,8 @@ import "./WealthCoinEscrow.sol";
 /// @notice Deploys one WealthCoinEscrow per sale, tracks them, and collects
 ///         the marketplace fee in WTC.
 contract WealthCoinEscrowFactory is Ownable2Step {
+    using SafeERC20 for IERC20;
+
     struct Sale {
         address escrow;
         address buyer;
@@ -20,12 +23,18 @@ contract WealthCoinEscrowFactory is Ownable2Step {
     IERC20 public immutable wtc;
 
     uint256 public constant MAX_FEE_BPS = 500; // 5% hard ceiling
+    uint256 public constant MIN_PAYMENT_WINDOW = 1 hours;
+    uint256 public constant MIN_DELIVERY_WINDOW = 1 days;
+
     uint256 public feeBps;
     address public feeRecipient;
     address public resolver;
 
     uint256 public defaultPaymentWindow = 3 days;
     uint256 public defaultDeliveryWindow = 14 days;
+
+    /// @notice Fees collected by escrows, not yet swept.
+    uint256 public accruedFees;
 
     Sale[] public sales;
     mapping(address => uint256[]) private _salesByBuyer;
@@ -43,11 +52,13 @@ contract WealthCoinEscrowFactory is Ownable2Step {
     event FeeRecipientUpdated(address recipient);
     event ResolverUpdated(address resolver);
     event WindowsUpdated(uint256 paymentWindow, uint256 deliveryWindow);
+    event FeesSwept(address indexed to, uint256 amount);
 
     error FeeTooHigh();
     error ZeroAddress();
     error ZeroPrice();
     error SameParties();
+    error InvalidWindow();
 
     constructor(
         address _wtc,
@@ -74,6 +85,7 @@ contract WealthCoinEscrowFactory is Ownable2Step {
         if (buyer == address(0) || seller == address(0)) revert ZeroAddress();
         if (buyer == seller) revert SameParties();
         if (priceInWTC == 0) revert ZeroPrice();
+        if (resolver == address(0)) revert ZeroAddress();
 
         escrow = address(
             new WealthCoinEscrow(
@@ -117,11 +129,20 @@ contract WealthCoinEscrowFactory is Ownable2Step {
         return _salesBySeller[seller];
     }
 
-    /// @notice Escrows send their fee here; this sweeps it to the fee recipient.
-    function sweepFees() external {
-        uint256 bal = wtc.balanceOf(address(this));
-        if (bal == 0) return;
-        wtc.transfer(feeRecipient, bal);
+    /// @notice Sweeps only the fees escrows have sent here, never other WTC
+    ///         that may land on this contract.
+    function sweepFees() external onlyOwner {
+        uint256 amount = accruedFees;
+        if (amount == 0) return;
+        accruedFees = 0;
+        wtc.safeTransfer(feeRecipient, amount);
+        emit FeesSwept(feeRecipient, amount);
+    }
+
+    /// @notice Called by an escrow when it pays its fee. Keeps the sweep honest.
+    function notifyFeeReceived(uint256 amount) external {
+        if (!isEscrow[msg.sender]) revert ZeroAddress();
+        accruedFees += amount;
     }
 
     function setFeeBps(uint256 _feeBps) external onlyOwner {
@@ -143,6 +164,8 @@ contract WealthCoinEscrowFactory is Ownable2Step {
     }
 
     function setDefaultWindows(uint256 _paymentWindow, uint256 _deliveryWindow) external onlyOwner {
+        if (_paymentWindow < MIN_PAYMENT_WINDOW || _deliveryWindow < MIN_DELIVERY_WINDOW)
+            revert InvalidWindow();
         defaultPaymentWindow = _paymentWindow;
         defaultDeliveryWindow = _deliveryWindow;
         emit WindowsUpdated(_paymentWindow, _deliveryWindow);
