@@ -1,16 +1,22 @@
-import "@nomicfoundation/hardhat-ignition";
-import "@nomicfoundation/hardhat-chai-matchers";
-import "@nomicfoundation/hardhat-ethers";
-import "@nomicfoundation/hardhat-verify";
+import { defineConfig } from "hardhat/config";
+import hardhatEthers from "@nomicfoundation/hardhat-ethers";
+import hardhatChaiMatchers from "@nomicfoundation/hardhat-chai-matchers";
+import hardhatVerify from "@nomicfoundation/hardhat-verify";
+import hardhatIgnition from "@nomicfoundation/hardhat-ignition";
 
-/** @type import('hardhat/config').HardhatUserConfig */
-export default {
+export default defineConfig({
   solidity: "0.8.24",
+  plugins: [
+    hardhatEthers,
+    hardhatChaiMatchers,
+    hardhatVerify,
+    hardhatIgnition,
+  ],
   networks: {
     polygon: {
       type: "http",
       url: process.env.POLYGON_RPC_URL || "",
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : []
-    }
-  }
-};
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+    },
+  },
+});
