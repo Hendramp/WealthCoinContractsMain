@@ -59,6 +59,7 @@ contract WealthCoinEscrowFactory is Ownable2Step {
     error ZeroPrice();
     error SameParties();
     error InvalidWindow();
+    error NotEscrow(); // CHANGED: was reusing ZeroAddress
 
     constructor(
         address _wtc,
@@ -85,7 +86,9 @@ contract WealthCoinEscrowFactory is Ownable2Step {
         if (buyer == address(0) || seller == address(0)) revert ZeroAddress();
         if (buyer == seller) revert SameParties();
         if (priceInWTC == 0) revert ZeroPrice();
-        if (resolver == address(0)) revert ZeroAddress();
+        // CHANGED: removed the unreachable resolver == address(0) check.
+        // setResolver() and the constructor already block zero, so it could
+        // never fire. The escrow constructor still checks it as a safety net.
 
         escrow = address(
             new WealthCoinEscrow(
@@ -141,7 +144,7 @@ contract WealthCoinEscrowFactory is Ownable2Step {
 
     /// @notice Called by an escrow when it pays its fee. Keeps the sweep honest.
     function notifyFeeReceived(uint256 amount) external {
-        if (!isEscrow[msg.sender]) revert ZeroAddress();
+        if (!isEscrow[msg.sender]) revert NotEscrow(); // CHANGED
         accruedFees += amount;
     }
 

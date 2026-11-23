@@ -140,6 +140,9 @@ contract WealthCoinEscrow is ReentrancyGuard {
     /// @notice Buyer recovers funds if the seller never marked delivery and the
     ///         payment deadline plus the delivery window has passed. Cannot run
     ///         after delivery — use raiseDispute() for that case.
+    /// @dev    CHANGED: the grace window now runs from paymentDeadline, which is
+    ///         fixed at deploy time. Same behaviour as before, but the comment
+    ///         above now matches the arithmetic.
     function claimAfterNoDelivery() external onlyBuyer inState(State.Paid) nonReentrant {
         if (block.timestamp <= paymentDeadline + deliveryWindow) revert DeadlineNotPassed();
         state = State.Refunded;
