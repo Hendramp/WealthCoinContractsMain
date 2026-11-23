@@ -1,0 +1,11 @@
+{
+  "network": "polygon",
+  "chainId": 137,
+  "factory": "0x8f4922FAd06897bBD7795AaC104Dbb7Cdbd07aE3",
+  "wtc": "0x394b57F4a40ff31530d66f904e1Db2C6516c018F",
+  "feeRecipient": "0x3032D0Adbb3bC432c08866e47604e0AE142eD60e",
+  "feeBps": 250,
+  "resolver": "0xA4B16960bFa44DC49f1366ca017287Ea715B335D",
+  "deployer": "0xA4B16960bFa44DC49f1366ca017287Ea715B335D",
+  "deployedAt": "2026-11-23T19:32:42.406Z"
+}
